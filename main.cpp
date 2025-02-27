@@ -189,7 +189,7 @@ void setup() {
     &publisher,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32MultiArray),
-    "imu_data"));
+    TOPIC));
 
   // create timer,
   const unsigned int timer_timeout = 10;

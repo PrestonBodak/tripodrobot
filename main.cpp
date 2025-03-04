@@ -21,6 +21,21 @@
 #include "I2Cdev.h"
 #include "MPU6050.h"
 
+//include GPS library for teensy #1
+#if TOPIC == 1
+#include <iarduino_GPS_NMEA.h>                   
+#include <iarduino_GPS_ATGM336.h>
+#include <std_msgs/msg/float32_multi_array.h>
+
+iarduino_GPS_NMEA    gps;                         
+iarduino_GPS_ATGM336 SettingsGPS;
+rcl_publisher_t gps_publisher;
+std_msgs__msg__Float32MultiArray gps_msg; //GPS data message
+static float gps_data[2]; //GPS data array
+rcl_timer_t gps_timer;
+rcl_node_t gps_node;
+#endif
+
 #define LED_PIN 13
 #define OUTPUT_READABLE_ACCELGYRO
 
@@ -38,15 +53,15 @@ void get_teensy_mac(uint8_t *mac) {
 }
 #endif
 
-rcl_publisher_t publisher;
+rcl_publisher_t imu_publisher;
 rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
-rcl_timer_t timer;
+rcl_timer_t imu_timer;
 
 MPU6050 mpu; //IMU object
-std_msgs__msg__Int32MultiArray msg; //IMU data message
+std_msgs__msg__Int32MultiArray imu_msg; //IMU data message
 static int32_t msg_data[12]; //IMU data array
 //IMU measurements + offsets
 int16_t ax, ay, az;
@@ -63,14 +78,14 @@ void error_loop(){
   }
 }
 
-void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
+void imu_timer_callback(rcl_timer_t * timer, int64_t last_call_time)
 {  
   RCLC_UNUSED(last_call_time);
   if (timer != NULL) {
-    RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
+    RCSOFTCHECK(rcl_publish(&imu_publisher, &imu_msg, NULL));
     
     for(int i = 0; i < 12; i++) {
-      msg.data.data[i] = msg.data.data[i] + 12;
+      imu_msg.data.data[i] = imu_msg.data.data[i] + 12;
     }
     //take IMU measurement */
     mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
@@ -83,14 +98,37 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
     gy -= gy_offset;
     gz -= gz_offset;
 
-    msg.data.data[0] = ax;
-    msg.data.data[1] = ay;
-    msg.data.data[2] = az;
-    msg.data.data[3] = gx;
-    msg.data.data[4] = gy;
-    msg.data.data[5] = gz;
+    imu_msg.data.data[0] = ax;
+    imu_msg.data.data[1] = ay;
+    imu_msg.data.data[2] = az;
+    imu_msg.data.data[3] = gx;
+    imu_msg.data.data[4] = gy;
+    imu_msg.data.data[5] = gz;
   }
 }
+
+#if TOPIC == 1
+void gps_timer_callback(rcl_timer_t * timer, int64_t last_call_time)
+{  
+  RCLC_UNUSED(last_call_time);
+  if (timer != NULL) {
+    RCSOFTCHECK(rcl_publish(&gps_publisher, &gps_msg, NULL));
+
+    gps.read();                                   
+     if( gps.errPos ){                             
+         //Serial.print("Invalid coordinates.");     
+     }else{                                     
+         Serial.print("Latitude: ");            
+         Serial.print(gps.latitude,5);            
+         Serial.print("°, ");                    
+         Serial.print("Longitude: ");             
+         Serial.print(gps.longitude,5);         
+         Serial.print("°.");
+         Serial.print("\r\n");             
+     } 
+  }
+}
+#endif
 
 void setup() {
   /*--Start I2C interface-- */
@@ -102,7 +140,7 @@ void setup() {
 
   Serial.begin(38400); //Initializate Serial wo work well at 8MHz/16MHz
 
-  /*Initialize device and check connection* */
+  /*Initialize MPU and check connection* */
   Serial.println("Initializing MPU...");
   mpu.initialize();
   Serial.println("Testing MPU6050 connection...");
@@ -130,6 +168,17 @@ void setup() {
   Serial.print(gy_offset); 
   Serial.print("\t");
   Serial.println(gz_offset);
+
+  #if TOPIC == 1
+  Serial.println("Initializing GPS...");
+  //Initialize GPS Module:                 
+  SettingsGPS.begin(Serial1);                  
+  gps.begin(Serial1);                                                
+  SettingsGPS.baudrate(9600);                  
+  SettingsGPS.system(GPS_GP, GPS_GL);          
+  SettingsGPS.composition(NMEA_RMC);           
+  SettingsGPS.updaterate(10);
+  #endif     
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
@@ -171,9 +220,17 @@ void setup() {
 
   delay(1000);
 
-  Serial.println("Creating ethernet node...");
+  Serial.print("Creating ethernet node: ");
   // create node
-  RCCHECK(rclc_node_init_default(&node, "micro_ros_arduino_ethernet_node", "", &support));
+  char nodename[33];
+  snprintf(nodename, 33, "micro_ros_arduino_ethernet_node%d", TOPIC);
+  Serial.println(nodename);
+  RCCHECK(rclc_node_init_default(&node, nodename, "", &support));
+
+  Serial.println("Creating GPS node...");
+  #if TOPIC == 1 
+  RCCHECK(rclc_node_init_default(&gps_node, "gps_node", "", &support));
+  #endif
 
   /*blink twice
   for(uint8_t i = 0; i < 4; i++) {
@@ -181,39 +238,78 @@ void setup() {
       delay(100);
   } */
 
-  delay(1000);
+  Serial.println("Creating IMU publisher...");
+  char topicstring[10];
+  snprintf(topicstring, 10, "imu%d_data", TOPIC);
 
-  Serial.println("Creating publisher...");
   // create publisher
   RCCHECK(rclc_publisher_init_best_effort(
-    &publisher,
+    &imu_publisher,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32MultiArray),
-    TOPIC));
+    topicstring));
 
-  // create timer,
-  const unsigned int timer_timeout = 10;
+  #if TOPIC == 1
+  Serial.println("Creating GPS publisher...");
+
+  RCCHECK(rclc_publisher_init_best_effort(
+    &gps_publisher,
+    &gps_node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+    "gps_data"));
+  #endif
+
+  Serial.println("Creating IMU timer...");
+  // create IMU timer,
   RCCHECK(rclc_timer_init_default(
-    &timer,
+    &imu_timer,
     &support,
-    RCL_MS_TO_NS(timer_timeout),
-    timer_callback));
+    RCL_MS_TO_NS(10),
+    imu_timer_callback));
+
+  #if TOPIC == 1
+  Serial.println("Creating GPS timer...");
+  //create GPS timer
+  RCCHECK(rclc_timer_init_default(
+    &gps_timer,
+    &support,
+    RCL_MS_TO_NS(10),
+    gps_timer_callback));
+  #endif
 
   // create executor
+  Serial.println("Creating executor...");
+  #if TOPIC == 1
+  RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
+  RCCHECK(rclc_executor_add_timer(&executor, &gps_timer));
+  #else
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
-  RCCHECK(rclc_executor_add_timer(&executor, &timer));
+  #endif
+
+  RCCHECK(rclc_executor_add_timer(&executor, &imu_timer));
 
 
 
-  //initialize IMU data array (9 measurements)
-  msg.data.capacity = 6;
-  msg.data.data = msg_data;
-  msg.data.size = 0;
+
+  //initialize IMU data array (6 measurements)
+  imu_msg.data.capacity = 6;
+  imu_msg.data.data = msg_data;
+  imu_msg.data.size = 0;
 
   for(int i = 0; i < 6; i++) {
-    msg.data.data[i] = 0;
-    msg.data.size++;
+    imu_msg.data.data[i] = 0;
+    imu_msg.data.size++;
   }
+
+  #if TOPIC == 1
+  //initialize GPS data array (2 measurements)
+  gps_msg.data.capacity = 2;
+  gps_msg.data.data = gps_data;
+  gps_msg.data.size = 2;
+
+  gps_msg.data.data[0] = 1.23456;
+  gps_msg.data.data[1] = -2.34567;
+  #endif
 
 }
 

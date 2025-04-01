@@ -21,6 +21,7 @@
 #include "I2Cdev.h"
 #include "MPU6050.h"
 
+
 //include GPS library for teensy #1
 #if TOPIC == 1
 #include <iarduino_GPS_NMEA.h>                   
@@ -32,8 +33,8 @@ iarduino_GPS_ATGM336 SettingsGPS;
 rcl_publisher_t gps_publisher;
 std_msgs__msg__Float32MultiArray gps_msg; //GPS data message
 static float gps_data[2]; //GPS data array
-rcl_timer_t gps_timer;
-rcl_node_t gps_node;
+//rcl_timer_t gps_timer;
+//rcl_node_t gps_node;
 #endif
 
 #define LED_PIN 13
@@ -104,9 +105,27 @@ void imu_timer_callback(rcl_timer_t * timer, int64_t last_call_time)
     imu_msg.data.data[3] = gx;
     imu_msg.data.data[4] = gy;
     imu_msg.data.data[5] = gz;
+
+    #if TOPIC == 1
+    RCSOFTCHECK(rcl_publish(&gps_publisher, &gps_msg, NULL));
+
+    gps.read();                                   
+     if( gps.errPos ){                             
+         //Serial.print("Invalid coordinates.");     
+     }else{                                     
+         Serial.print("Latitude: ");            
+         Serial.print(gps.latitude,5);            
+         Serial.print("°, ");                    
+         Serial.print("Longitude: ");             
+         Serial.print(gps.longitude,5);         
+         Serial.print("°.");
+         Serial.print("\r\n");             
+     } 
+     #endif
   }
 }
 
+/*
 #if TOPIC == 1
 void gps_timer_callback(rcl_timer_t * timer, int64_t last_call_time)
 {  
@@ -129,6 +148,7 @@ void gps_timer_callback(rcl_timer_t * timer, int64_t last_call_time)
   }
 }
 #endif
+*/
 
 void setup() {
   /*--Start I2C interface-- */
@@ -227,10 +247,12 @@ void setup() {
   Serial.println(nodename);
   RCCHECK(rclc_node_init_default(&node, nodename, "", &support));
 
+  /*
   Serial.println("Creating GPS node...");
   #if TOPIC == 1 
   RCCHECK(rclc_node_init_default(&gps_node, "gps_node", "", &support));
   #endif
+  */
 
   /*blink twice
   for(uint8_t i = 0; i < 4; i++) {
@@ -254,7 +276,7 @@ void setup() {
 
   RCCHECK(rclc_publisher_init_best_effort(
     &gps_publisher,
-    &gps_node,
+    &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
     "gps_data"));
   #endif
@@ -267,24 +289,29 @@ void setup() {
     RCL_MS_TO_NS(10),
     imu_timer_callback));
 
+  /*
   #if TOPIC == 1
   Serial.println("Creating GPS timer...");
   //create GPS timer
   RCCHECK(rclc_timer_init_default(
-    &gps_timer,
+    &imu_timer,
     &support,
     RCL_MS_TO_NS(10),
     gps_timer_callback));
   #endif
+  */
 
   // create executor
   Serial.println("Creating executor...");
+  /*
   #if TOPIC == 1
   RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
   RCCHECK(rclc_executor_add_timer(&executor, &gps_timer));
   #else
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
   #endif
+  */
+  RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
 
   RCCHECK(rclc_executor_add_timer(&executor, &imu_timer));
 

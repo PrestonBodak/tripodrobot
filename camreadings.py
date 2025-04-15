@@ -9,12 +9,9 @@ class CamSubscriber(Node):
     def __init__(self):
         super().__init__("intel_subscriber")
 
-        # Create subscriptions for RGB, Depth, and Object Detection topics from three cameras
+        # Create subscriptions for RGB and Object Detection topics from three cameras
         self.subscription_rgb_1 = self.create_subscription(
             Image, "camera_1/rgb_frame", self.rgb_frame_callback_1, 10
-        )
-        self.subscription_depth_1 = self.create_subscription(
-            Image, "camera_1/depth_frame", self.depth_frame_callback_1, 10
         )
         self.subscription_detections_1 = self.create_subscription(
             Detection2DArray, "camera_1/detections", self.detection_callback_1, 10
@@ -23,18 +20,12 @@ class CamSubscriber(Node):
         self.subscription_rgb_2 = self.create_subscription(
             Image, "camera_2/rgb_frame", self.rgb_frame_callback_2, 10
         )
-        self.subscription_depth_2 = self.create_subscription(
-            Image, "camera_2/depth_frame", self.depth_frame_callback_2, 10
-        )
         self.subscription_detections_2 = self.create_subscription(
             Detection2DArray, "camera_2/detections", self.detection_callback_2, 10
         )
 
         self.subscription_rgb_3 = self.create_subscription(
             Image, "camera_3/rgb_frame", self.rgb_frame_callback_3, 10
-        )
-        self.subscription_depth_3 = self.create_subscription(
-            Image, "camera_3/depth_frame", self.depth_frame_callback_3, 10
         )
         self.subscription_detections_3 = self.create_subscription(
             Detection2DArray, "camera_3/detections", self.detection_callback_3, 10
@@ -45,54 +36,39 @@ class CamSubscriber(Node):
 
         # Variables to hold frames and detections
         self.current_rgb_1 = None
-        self.current_depth_1 = None
         self.current_detections_1 = []
 
         self.current_rgb_2 = None
-        self.current_depth_2 = None
         self.current_detections_2 = []
 
         self.current_rgb_3 = None
-        self.current_depth_3 = None
         self.current_detections_3 = []
 
         # Set up a timer to regularly call the display function
         self.timer = self.create_timer(0.1, self.timer_callback)  # 10 FPS, adjust if necessary
 
-    # RGB and Depth frame callbacks for Camera 1
+    # RGB frame callbacks for Camera 1
     def rgb_frame_callback_1(self, msg):
         self.get_logger().info("Receiving Camera 1 RGB frame")
         self.current_rgb_1 = self.br.imgmsg_to_cv2(msg)
-
-    def depth_frame_callback_1(self, msg):
-        self.get_logger().info("Receiving Camera 1 Depth frame")
-        self.current_depth_1 = self.br.imgmsg_to_cv2(msg)
 
     def detection_callback_1(self, detections_msg):
         self.get_logger().info("Receiving Camera 1 Object Detection data")
         self.current_detections_1 = detections_msg.detections
 
-    # RGB and Depth frame callbacks for Camera 2
+    # RGB frame callbacks for Camera 2
     def rgb_frame_callback_2(self, msg):
         self.get_logger().info("Receiving Camera 2 RGB frame")
         self.current_rgb_2 = self.br.imgmsg_to_cv2(msg)
-
-    def depth_frame_callback_2(self, msg):
-        self.get_logger().info("Receiving Camera 2 Depth frame")
-        self.current_depth_2 = self.br.imgmsg_to_cv2(msg)
 
     def detection_callback_2(self, detections_msg):
         self.get_logger().info("Receiving Camera 2 Object Detection data")
         self.current_detections_2 = detections_msg.detections
 
-    # RGB and Depth frame callbacks for Camera 3
+    # RGB frame callbacks for Camera 3
     def rgb_frame_callback_3(self, msg):
         self.get_logger().info("Receiving Camera 3 RGB frame")
         self.current_rgb_3 = self.br.imgmsg_to_cv2(msg)
-
-    def depth_frame_callback_3(self, msg):
-        self.get_logger().info("Receiving Camera 3 Depth frame")
-        self.current_depth_3 = self.br.imgmsg_to_cv2(msg)
 
     def detection_callback_3(self, detections_msg):
         self.get_logger().info("Receiving Camera 3 Object Detection data")
